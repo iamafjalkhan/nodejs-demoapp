@@ -13,13 +13,21 @@ on:
         required: true
         default: 'latest'
 
-# Note. Required secrets: CLUSTER_KUBECONFIG
+# Note: Required secrets: CLUSTER_KUBECONFIG
 
 env:
   CLUSTER_NAME: sandbox
   HELM_RELEASE: nodejs
   HELM_NAMESPACE: demoapps
   INGRESS_DNS_HOST: nodejs-demoapp.kube.benco.io
+
+# Cancel in-progress deployments
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false  # Never cancel deployments
+
+permissions:
+  contents: read
 
 jobs:
   #
@@ -28,6 +36,7 @@ jobs:
   deploy-aks:
     name: Deploy to AKS with Helm
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     environment:
       name: AKS - nodejs-demoapp
       url: https://${{ env.INGRESS_DNS_HOST }}/
@@ -59,6 +68,7 @@ jobs:
     name: 'Run Deployment Tests'
     needs: deploy-aks
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     environment:
       name: AKS - nodejs-demoapp
       url: https://${{ env.INGRESS_DNS_HOST }}/

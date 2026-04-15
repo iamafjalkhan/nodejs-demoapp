@@ -8,16 +8,23 @@ env:
   IMAGE_REG: ghcr.io
   IMAGE_REPO: benc-uk/nodejs-demoapp
 
+# Cancel any in-progress release builds
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
+  contents: read
   packages: write
 
 jobs:
   publish-image:
     name: 'Build & Publish'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: 'Checkout'
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
 
       - name: 'Docker build image with version tag'
         run: |
