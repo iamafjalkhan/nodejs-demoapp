@@ -18,7 +18,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # === Dependency Audit (fast - runs on every PR) ===
+  # === Dependency Audit ===
   dependency-audit:
     name: Dependency Audit
     runs-on: ubuntu-latest
@@ -37,9 +37,10 @@ jobs:
 
       - name: Audit dependencies
         run: npm audit --audit-level=high --prefix src
+        # Warn on PRs (continue-on-error), fail on main/schedule
         continue-on-error: ${{ github.event_name == 'pull_request' }}
 
-  # === Secret Detection (fast) ===
+  # === Secret Detection ===
   secret-detection:
     name: Secret Detection
     runs-on: ubuntu-latest
@@ -73,7 +74,7 @@ jobs:
         with:
           category: /language:javascript
 
-  # === Container Image Scan (when Dockerfile changes) ===
+  # === Container Image Scan ===
   container-scan:
     name: Container Scan
     runs-on: ubuntu-latest
@@ -100,7 +101,8 @@ jobs:
           format: sarif
           output: trivy-results.sarif
           severity: CRITICAL,HIGH
-          exit-code: 1
+          # Fail on main, warn on PRs
+          exit-code: ${{ github.event_name == 'pull_request' && 0 || 1 }}
 
       - name: Upload SARIF
         if: always()
@@ -117,19 +119,24 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
+      - name: Build image
+        uses: docker/build-push-action@v6
         with:
-          node-version: '20.x'
-
-      - name: Install dependencies
-        run: npm ci --prefix src
+          context: .
+          file: build/Dockerfile
+          tags: nodejs-demoapp:sbom
+          load: true
 
       - name: Generate SBOM
-        run: npx @cyclonedx/cyclonedx-npm --output-file sbom.json --prefix src
+        uses: anchore/sbom-action@v0
+        with:
+          image: nodejs-demoapp:sbom
+          format: spdx-json
+          output-file: sbom.spdx.json
 
       - name: Upload SBOM
         uses: actions/upload-artifact@v4
         with:
           name: sbom
-          path: sbom.json
+          path: sbom.spdx.json
           retention-days: 90

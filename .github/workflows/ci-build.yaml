@@ -16,7 +16,6 @@ concurrency:
 
 permissions:
   contents: read
-  packages: write
   statuses: write
   checks: write
 
@@ -80,7 +79,7 @@ jobs:
 
   # Build only runs after lint & test pass
   build:
-    name: 'Build & push image'
+    name: 'Build Docker image'
     needs: [lint, test]
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -89,23 +88,5 @@ jobs:
       - name: 'Checkout'
         uses: actions/checkout@v4
 
-      # Create datestamp image tag
-      - name: 'Create datestamp image tag'
-        run: echo "IMAGE_TAG=$(date +%d-%m-%Y.%H%M)" >> $GITHUB_ENV
-
       - name: 'Docker build image'
         run: make image
-
-      # Only when pushing to default branch (master or main), push image to registry
-      - name: 'Push to container registry'
-        run: |
-          echo ${{ secrets.GITHUB_TOKEN }} | docker login $IMAGE_REG -u $GITHUB_ACTOR --password-stdin
-          make push
-
-      - name: 'Trigger AKS release pipeline'
-        if: github.ref == 'refs/heads/main'
-        uses: benc-uk/workflow-dispatch@v1
-        with:
-          workflow: 'CD Release - AKS'
-          token: ${{ secrets.GH_PAT }}
-          inputs: '{ "IMAGE_TAG": "${{ env.IMAGE_TAG }}" }'
