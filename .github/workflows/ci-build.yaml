@@ -3,7 +3,27 @@ name: CI Build App
 on:
   push:
     branches: [main]
+    paths:
+      - 'src/**'
+      - 'package*.json'
+      - 'Makefile'
+      - 'build/**'
+      - '.github/workflows/ci-build.yaml'
+      - '.nvmrc'
+      - '!.github/**'
+      - '!.vscode/**'
+      - '!*.md'
   pull_request:
+    paths:
+      - 'src/**'
+      - 'package*.json'
+      - 'Makefile'
+      - 'build/**'
+      - '.github/workflows/ci-build.yaml'
+      - '.nvmrc'
+      - '!.github/**'
+      - '!.vscode/**'
+      - '!*.md'
 
 env:
   IMAGE_REG: ghcr.io
@@ -12,7 +32,7 @@ env:
 # Prevent duplicate runs - cancel in-progress when new commits arrive
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 permissions:
   contents: read
@@ -31,8 +51,8 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20.x'
-          cache: 'npm'
+          node-version-file: .nvmrc
+          cache: npm
           cache-dependency-path: src/package-lock.json
 
       - name: 'Install dependencies'
@@ -52,8 +72,8 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20.x'
-          cache: 'npm'
+          node-version-file: .nvmrc
+          cache: npm
           cache-dependency-path: src/package-lock.json
 
       - name: 'Install dependencies'
@@ -88,5 +108,14 @@ jobs:
       - name: 'Checkout'
         uses: actions/checkout@v4
 
-      - name: 'Docker build image'
-        run: make image
+      - name: 'Set up Docker Buildx'
+        uses: docker/setup-buildx-action@v3
+
+      - name: 'Docker build with cache'
+        run: |
+          docker build \
+            --build-arg BUILDKIT_INLINE_CACHE=1 \
+            --cache-from type=gha \
+            --cache-to type=gha,mode=max \
+            --tag nodejs-demoapp:build \
+            -f build/Dockerfile .

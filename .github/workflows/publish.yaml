@@ -18,21 +18,73 @@ permissions:
   packages: write
 
 jobs:
-  publish-image:
-    name: 'Build & Publish'
+  # === Build both images in parallel ===
+  build:
+    name: 'Build ${{ matrix.tag }}'
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - tag: ${{ github.event.release.tag_name }}
+          - tag: latest
+
     steps:
       - name: 'Checkout'
         uses: actions/checkout@v4
 
-      - name: 'Docker build image with version tag'
-        run: |
-          make image IMAGE_TAG=${{ github.event.release.tag_name }}
-          make image IMAGE_TAG=latest
+      - name: 'Set up Docker Buildx'
+        uses: docker/setup-buildx-action@v3
 
-      - name: 'Push to container registry'
+      - name: 'Docker build with cache'
         run: |
-          echo ${{ secrets.GITHUB_TOKEN }} | docker login $IMAGE_REG -u $GITHUB_ACTOR --password-stdin
-          make push IMAGE_TAG=${{ github.event.release.tag_name }}
-          make push IMAGE_TAG=latest
+          docker build \
+            --build-arg BUILDKIT_INLINE_CACHE=1 \
+            --cache-from type=gha \
+            --cache-to type=gha,mode=max \
+            --tag ${{ env.IMAGE_REG }}/${{ env.IMAGE_REPO }}:${{ matrix.tag }} \
+            -f build/Dockerfile .
+
+      - name: 'Save image to cache'
+        uses: actions/cache@v4
+        with:
+          path: /tmp/docker-images
+          key: release-images-${{ matrix.tag }}
+          restore-keys: |
+            release-images-
+
+      - name: 'Save image as artifact'
+        run: |
+          mkdir -p /tmp/docker-images
+          docker save ${{ env.IMAGE_REG }}/${{ env.IMAGE_REPO }}:${{ matrix.tag }} > /tmp/docker-images/${{ matrix.tag }}.tar
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: image-${{ matrix.tag }}
+          path: /tmp/docker-images/${{ matrix.tag }}.tar
+          retention-days: 1
+
+  # === Push both images sequentially after build ===
+  push:
+    name: 'Push Images'
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: 'Download all images'
+        uses: actions/download-artifact@v4
+        with:
+          pattern: image-*
+          path: /tmp/docker-images
+          merge-multiple: true
+
+      - name: 'Push to registry'
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login $IMAGE_REG -u $GITHUB_ACTOR --password-stdin
+
+          for tag in latest ${{ github.event.release.tag_name }}; do
+            docker load --input /tmp/docker-images/${tag}.tar
+            docker push $IMAGE_REG/$IMAGE_REPO:${tag}
+            echo "Pushed: $IMAGE_REG/$IMAGE_REPO:${tag}"
+          done
